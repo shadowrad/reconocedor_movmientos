@@ -6,7 +6,12 @@ import cv2
 import time
 
 # Cargamos el vídeo
-camara = cv2.VideoCapture(0)
+#
+camara = cv2.VideoCapture('videos/chicos_estudiando.mp4')
+#camara = cv2.VideoCapture(0)
+fourcc = cv2.VideoWriter_fourcc(*'XVID')
+
+
 
 
 def debe_reiniciar_fondo(inicio):
@@ -16,15 +21,24 @@ def debe_reiniciar_fondo(inicio):
     return False
 
 
+
+
 class Detector():
+    difencias = []
     tiempo_inicio = datetime.datetime.now()
     fondo = None
     gris=None
+
+    def get_prom_diferencias(self, dif):
+        self.difencias.append(np.mean(dif, axis=0,dtype=np.float64))
+
 
     def administrar_fondo(self):
         if debe_reiniciar_fondo(self.tiempo_inicio) or self.fondo is None:
             self.tiempo_inicio = datetime.datetime.now()
             self.fondo = self.gris
+
+
 
     def obtener_imagen_nueva_gris(self,frame):
         # Convertimos a escala de grises
@@ -33,14 +47,17 @@ class Detector():
         self.gris = cv2.GaussianBlur(self.gris, (21, 21), 0)
 
     def detectar_mov(self):
+        out = None
         # Recorremos todos los frames
         while True:
             # Obtenemos el frame
             (grabbed, frame) = camara.read()
+            se_dibujo_algo = False
 
             # Si hemos llegado al final del vídeo salimos
             if not grabbed:
                 break
+
             self.obtener_imagen_nueva_gris(frame)
             # Admisnistro el fondo (cada 2 segundos)
             self.administrar_fondo()
@@ -49,8 +66,7 @@ class Detector():
             resta = cv2.absdiff(self.fondo, self.gris)
 
             # Aplicamos un umbral del 50%
-            umbral = cv2.threshold(resta, 50, 100, cv2.THRESH_BINARY)[1]
-
+            umbral = cv2.threshold(resta, 40, 255, cv2.THRESH_BINARY)[1]
             # Dilatamos el umbral para tapar agujeros
             umbral = cv2.dilate(umbral, None, iterations=2)
 
@@ -70,13 +86,25 @@ class Detector():
                 (x, y, ancho, alto) = cv2.boundingRect(c)
 
                 # Dibujo el rectangulo
-                cv2.rectangle(frame, (x, y), (x + ancho, y + alto), (0, 0, 255), 2)
+                cv2.rectangle(frame, (x, y), (x + ancho, y + alto), (0, 0, 255),2)
+                se_dibujo_algo =True
 
             # Mostramos las imágenes de la cámara, el umbral y la resta
             cv2.imshow("Camara", frame)
+            if se_dibujo_algo:
+                test = 0
             cv2.imshow("Umbral", umbral)
+
             cv2.imshow("Diferencia", resta)
             cv2.imshow("Contorno", contornosimg)
+
+            self.get_prom_diferencias(resta)
+
+            if out is None:
+                height, width, layers = frame.shape
+
+                out = cv2.VideoWriter("output.avi", cv2.VideoWriter_fourcc(*"XVID"), 30, (width, height))
+            out.write(frame)
 
             # Capturamos una tecla para salir
             key = cv2.waitKey(1) & 0xFF
@@ -90,6 +118,9 @@ class Detector():
 
         # Liberamos la cámara y cerramos todas las ventanas
         camara.release()
+        out.release()
+        for a in self.difencias:
+            print(a)
         cv2.destroyAllWindows()
 
 
