@@ -6,41 +6,58 @@ import cv2
 import time
 
 # Cargamos el vídeo
-#
 camara = cv2.VideoCapture('videos/chicos_estudiando.mp4')
-#camara = cv2.VideoCapture(0)
-fourcc = cv2.VideoWriter_fourcc(*'XVID')
 
 
+# camara = cv2.VideoCapture(0)
+# fourcc = cv2.VideoWriter_fourcc(*'XVID')
 
 
-def debe_reiniciar_fondo(inicio):
+def debe_reiniciar_inicio(inicio):
     ahora = datetime.datetime.now()
-    if (ahora - inicio).total_seconds() > 2:
+    if (ahora - inicio).total_seconds() > 0.3:
         return True
     return False
 
 
+def verfifcar_promedio(array, promedio):
+    cantidad = len(array)
+    acum = 0
+    for i in array:
+        acum += i[0]
+    print(acum/cantidad)
+    print(promedio)
 
 
-class Detector():
-    difencias = []
+class Detector(object):
+    diferencias = []
+    diferencias_en_rango = []
+    items = []
     tiempo_inicio = datetime.datetime.now()
-    fondo = None
-    gris=None
+    anterior = None
+    gris = None
 
     def get_prom_diferencias(self, dif):
-        self.difencias.append(np.mean(dif, axis=0,dtype=np.float64))
+        promedio_cols_tiempo = np.mean(dif, axis=0, dtype=np.float64)
+        if promedio_cols_tiempo.max() > 0:
+            self.diferencias.append(promedio_cols_tiempo)
 
+    def set_prom_rango(self):
+        if len(self.diferencias) > 0:
+            if len(self.diferencias) == 2:
+                pass
+            promedio_cols_tiempo = np.mean(self.diferencias, axis=0, dtype=np.float64)
+            self.diferencias_en_rango.append(promedio_cols_tiempo)
+            verfifcar_promedio(self.diferencias, promedio_cols_tiempo[0])
+            self.diferencias = []
 
-    def administrar_fondo(self):
-        if debe_reiniciar_fondo(self.tiempo_inicio) or self.fondo is None:
+    def administrar_imagen_inicio(self):
+        if debe_reiniciar_inicio(self.tiempo_inicio) or self.anterior is None:
             self.tiempo_inicio = datetime.datetime.now()
-            self.fondo = self.gris
+            self.anterior = self.gris
+            self.set_prom_rango()
 
-
-
-    def obtener_imagen_nueva_gris(self,frame):
+    def obtener_imagen_nueva_gris(self, frame):
         # Convertimos a escala de grises
         self.gris = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         # Aplicamos suavizado para eliminar ruido
@@ -52,7 +69,6 @@ class Detector():
         while True:
             # Obtenemos el frame
             (grabbed, frame) = camara.read()
-            se_dibujo_algo = False
 
             # Si hemos llegado al final del vídeo salimos
             if not grabbed:
@@ -60,10 +76,10 @@ class Detector():
 
             self.obtener_imagen_nueva_gris(frame)
             # Admisnistro el fondo (cada 2 segundos)
-            self.administrar_fondo()
+            self.administrar_imagen_inicio()
 
             # Calculo de la diferencia entre el fondo y el frame actual
-            resta = cv2.absdiff(self.fondo, self.gris)
+            resta = cv2.absdiff(self.anterior, self.gris)
 
             # Aplicamos un umbral del 50%
             umbral = cv2.threshold(resta, 40, 255, cv2.THRESH_BINARY)[1]
@@ -86,13 +102,11 @@ class Detector():
                 (x, y, ancho, alto) = cv2.boundingRect(c)
 
                 # Dibujo el rectangulo
-                cv2.rectangle(frame, (x, y), (x + ancho, y + alto), (0, 0, 255),2)
-                se_dibujo_algo =True
+                cv2.rectangle(frame, (x, y), (x + ancho, y + alto), (0, 0, 255), 2)
 
             # Mostramos las imágenes de la cámara, el umbral y la resta
             cv2.imshow("Camara", frame)
-            if se_dibujo_algo:
-                test = 0
+
             cv2.imshow("Umbral", umbral)
 
             cv2.imshow("Diferencia", resta)
@@ -119,7 +133,7 @@ class Detector():
         # Liberamos la cámara y cerramos todas las ventanas
         camara.release()
         out.release()
-        for a in self.difencias:
+        for a in self.diferencias:
             print(a)
         cv2.destroyAllWindows()
 
