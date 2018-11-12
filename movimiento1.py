@@ -1,16 +1,22 @@
-# Importamos las librerías necesarias
-import datetime
+# Importamos las librerías necesarias de django
 
+
+import sys
+# Django specific settings
+import os
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "detector_acciones.settings")
+import django
+
+django.setup()
+
+# Your application specific imports
+from detector_admin.models import Movimiento
+
+import datetime
 import numpy as np
 import cv2
 import time
-
-# Cargamos el vídeo
-camara = cv2.VideoCapture('videos/chicos_estudiando.mp4')
-
-
-# camara = cv2.VideoCapture(0)
-# fourcc = cv2.VideoWriter_fourcc(*'XVID')
 
 
 def debe_reiniciar_inicio(inicio):
@@ -25,31 +31,49 @@ def verfifcar_promedio(array, promedio):
     acum = 0
     for i in array:
         acum += i[0]
-    print(acum/cantidad)
+    print(acum / cantidad)
     print(promedio)
 
 
+def guardar_datos(lista2d):
+    with open("datos_guardados/datos.json", "w+") as f:
+        Movimiento.objects.all().delete()
+        for lista in lista2d:
+            if len(str(lista['frame'])) > 0:
+                mov = Movimiento()
+                mov.crear(features=str(lista['frame']),tiempo_ini=str(lista['tiempo_ini']),tiempo_fin=str(lista['tiempo_fin']))
+                mov.save()
+
+
 class Detector(object):
-    diferencias = []
+    diferencias = {'frames': [], 'tiempo': []}
     diferencias_en_rango = []
     items = []
     tiempo_inicio = datetime.datetime.now()
+    video_inicio = 0
     anterior = None
     gris = None
+    camara = cv2.VideoCapture('videos/chicos_estudiando.mp4')
+    video_inicio = datetime.datetime.now()
+
+    # camara = cv2.VideoCapture(0)
+    # fourcc = cv2.VideoWriter_fourcc(*'XVID')
 
     def get_prom_diferencias(self, dif):
         promedio_cols_tiempo = np.mean(dif, axis=0, dtype=np.float64)
         if promedio_cols_tiempo.max() > 0:
-            self.diferencias.append(promedio_cols_tiempo)
+            self.diferencias['frames'].append(promedio_cols_tiempo)
+            self.diferencias['tiempo'].append(datetime.datetime.now() - self.video_inicio)
 
     def set_prom_rango(self):
-        if len(self.diferencias) > 0:
-            if len(self.diferencias) == 2:
-                pass
-            promedio_cols_tiempo = np.mean(self.diferencias, axis=0, dtype=np.float64)
-            self.diferencias_en_rango.append(promedio_cols_tiempo)
-            verfifcar_promedio(self.diferencias, promedio_cols_tiempo[0])
-            self.diferencias = []
+        if len(self.diferencias['frames']) > 0:
+            promedio_cols_tiempo = np.mean(self.diferencias['frames'], axis=0, dtype=np.float64)
+            dato = {'frame': promedio_cols_tiempo, 'tiempo_ini': min(self.diferencias['tiempo']),
+                    'tiempo_fin': max(self.diferencias['tiempo'])}
+            self.diferencias_en_rango.append(dato)
+            # verfifcar_promedio(self.diferencias, promedio_cols_tiempo[0])
+            self.diferencias['frames'] = []
+            self.diferencias['tiempo'] = []
 
     def administrar_imagen_inicio(self):
         if debe_reiniciar_inicio(self.tiempo_inicio) or self.anterior is None:
@@ -68,7 +92,7 @@ class Detector(object):
         # Recorremos todos los frames
         while True:
             # Obtenemos el frame
-            (grabbed, frame) = camara.read()
+            (grabbed, frame) = self.camara.read()
 
             # Si hemos llegado al final del vídeo salimos
             if not grabbed:
@@ -131,11 +155,10 @@ class Detector(object):
                 break
 
         # Liberamos la cámara y cerramos todas las ventanas
-        camara.release()
+        self.camara.release()
         out.release()
-        for a in self.diferencias:
-            print(a)
         cv2.destroyAllWindows()
+        guardar_datos(self.diferencias_en_rango)
 
 
 detetor = Detector()
